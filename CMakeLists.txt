@@ -6,14 +6,9 @@ set(LICENSE "GPL")
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread" )
 
-file(GLOB SOURCES
-  "src/*.cpp"
-)
+file(GLOB SOURCES "src/*.cpp")
 
-add_executable(
-  cserver
-  ${SOURCES}
-)
+add_executable(cserver ${SOURCES})
 
 # setup directory where we should look for cmake files
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")

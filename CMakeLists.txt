@@ -17,7 +17,7 @@ set(Boost_USE_STATIC_LIBS ON)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 
-FIND_PACKAGE(Boost COMPONENTS system REQUIRED)
+FIND_PACKAGE(Boost REQUIRED)
 
 target_include_directories(cserver PRIVATE ${Boost_INCLUDE_DIRS})
 target_link_libraries(cserver ${Boost_LIBRARIES})

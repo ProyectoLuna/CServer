@@ -18,6 +18,9 @@ set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 
 find_package(Boost COMPONENTS system REQUIRED)
+if (Boost_FOUND)
+    INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
+endif()
 
 message("Boost INCLUCDE_DIRS: " ${Boost_INCLUDE_DIRS})
 message("Boost LIBRARIES: " ${Boost_LIBRARIES})

@@ -13,6 +13,11 @@ add_executable(cserver ${SOURCES})
 # setup directory where we should look for cmake files
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
+find_package (sqlite3)
+if (SQLITE3_FOUND)
+  include_directories(${SQLITE3_INCLUDE_DIRS})
+endif (SQLITE3_FOUND)
+
 find_package(OpenSSL REQUIRED)
 include_directories(${OPENSSL_INCLUDE_DIR})
 
@@ -36,4 +41,4 @@ if (Boost_FOUND)
 
 endif()
 
-target_link_libraries(cserver LINK_PUBLIC ${OPENSSL_LIBRARIES} ${Boost_LIBRARIES})
+target_link_libraries(cserver LINK_PUBLIC ${SQLITE3_LIBRARIES} ${OPENSSL_LIBRARIES} ${Boost_LIBRARIES})

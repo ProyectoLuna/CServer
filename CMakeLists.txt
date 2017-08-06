@@ -13,6 +13,9 @@ add_executable(cserver ${SOURCES})
 # setup directory where we should look for cmake files
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
+find_package(OpenSSL REQUIRED)
+include_directories(${OPENSSL_INCLUDE_DIR})
+
 set(Boost_USE_STATIC_LIBS ${USE_STATIC_BOOST})
 set(Boost_USE_MULTITHREADED ON)
 
@@ -31,9 +34,6 @@ if (Boost_FOUND)
     INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
     LINK_DIRECTORIES(${Boost_LIBRARY_DIR})
 
-    #message("Boost INCLUCDE_DIRS: " ${Boost_INCLUDE_DIRS})
-    #message("Boost LIBRARIES: " ${Boost_LIBRARIES})
-
-    target_include_directories(cserver PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(cserver LINK_PUBLIC ${Boost_LIBRARIES})
 endif()
+
+target_link_libraries(cserver LINK_PUBLIC ${OPENSSL_LIBRARIES} ${Boost_LIBRARIES})

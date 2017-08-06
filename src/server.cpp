@@ -8,87 +8,163 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#include "server.hpp"
-#include <signal.h>
-#include <utility>
+#include <cstdlib>
+#include <iostream>
+#include <boost/bind.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 
-namespace http {
-namespace server {
+typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_socket;
 
-server::server(const std::string& address, const std::string& port,
-    const std::string& doc_root)
-  : io_service_(),
-    signals_(io_service_),
-    acceptor_(io_service_),
-    connection_manager_(),
-    socket_(io_service_),
-    request_handler_(doc_root)
+class session
 {
-  // Register to handle the signals that indicate when the server should exit.
-  // It is safe to register for the same signal multiple times in a program,
-  // provided all registration for the specified signal is made through Asio.
-  signals_.add(SIGINT);
-  signals_.add(SIGTERM);
-#if defined(SIGQUIT)
-  signals_.add(SIGQUIT);
-#endif // defined(SIGQUIT)
+public:
+  session(boost::asio::io_service& io_service,
+      boost::asio::ssl::context& context)
+    : socket_(io_service, context)
+  {
+  }
 
-  do_await_stop();
+  ssl_socket::lowest_layer_type& socket()
+  {
+    return socket_.lowest_layer();
+  }
 
-  // Open the acceptor with the option to reuse the address (i.e. SO_REUSEADDR).
-  boost::asio::ip::tcp::resolver resolver(io_service_);
-  boost::asio::ip::tcp::endpoint endpoint = *resolver.resolve({address, port});
-  acceptor_.open(endpoint.protocol());
-  acceptor_.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
-  acceptor_.bind(endpoint);
-  acceptor_.listen();
+  void start()
+  {
+    socket_.async_handshake(boost::asio::ssl::stream_base::server,
+        boost::bind(&session::handle_handshake, this,
+          boost::asio::placeholders::error));
+  }
 
-  do_accept();
-}
+  void handle_handshake(const boost::system::error_code& error)
+  {
+    if (!error)
+    {
+      socket_.async_read_some(boost::asio::buffer(data_, max_length),
+          boost::bind(&session::handle_read, this,
+            boost::asio::placeholders::error,
+            boost::asio::placeholders::bytes_transferred));
+    }
+    else
+    {
+      delete this;
+    }
+  }
 
-void server::run()
+  void handle_read(const boost::system::error_code& error,
+      size_t bytes_transferred)
+  {
+    if (!error)
+    {
+      boost::asio::async_write(socket_,
+          boost::asio::buffer(data_, bytes_transferred),
+          boost::bind(&session::handle_write, this,
+            boost::asio::placeholders::error));
+    }
+    else
+    {
+      delete this;
+    }
+  }
+
+  void handle_write(const boost::system::error_code& error)
+  {
+    if (!error)
+    {
+      socket_.async_read_some(boost::asio::buffer(data_, max_length),
+          boost::bind(&session::handle_read, this,
+            boost::asio::placeholders::error,
+            boost::asio::placeholders::bytes_transferred));
+    }
+    else
+    {
+      delete this;
+    }
+  }
+
+private:
+  ssl_socket socket_;
+  enum { max_length = 1024 };
+  char data_[max_length];
+};
+
+class server
 {
-  // The io_service::run() call will block until all asynchronous operations
-  // have finished. While the server is running, there is always at least one
-  // asynchronous operation outstanding: the asynchronous accept call waiting
-  // for new incoming connections.
-  io_service_.run();
-}
+public:
+  server(boost::asio::io_service& io_service, unsigned short port)
+    : io_service_(io_service),
+      acceptor_(io_service,
+          boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port)),
+      context_(boost::asio::ssl::context::sslv23)
+  {
+    context_.set_options(
+        boost::asio::ssl::context::default_workarounds
+        | boost::asio::ssl::context::no_sslv2
+        | boost::asio::ssl::context::single_dh_use);
+    context_.set_password_callback(boost::bind(&server::get_password, this));
+    context_.use_certificate_chain_file("server.pem");
+    context_.use_private_key_file("server.pem", boost::asio::ssl::context::pem);
+    context_.use_tmp_dh_file("dh2048.pem");
 
-void server::do_accept()
+    start_accept();
+  }
+
+  std::string get_password() const
+  {
+    return "test";
+  }
+
+  void start_accept()
+  {
+    session* new_session = new session(io_service_, context_);
+    acceptor_.async_accept(new_session->socket(),
+        boost::bind(&server::handle_accept, this, new_session,
+          boost::asio::placeholders::error));
+  }
+
+  void handle_accept(session* new_session,
+      const boost::system::error_code& error)
+  {
+    if (!error)
+    {
+      new_session->start();
+    }
+    else
+    {
+      delete new_session;
+    }
+
+    start_accept();
+  }
+
+private:
+  boost::asio::io_service& io_service_;
+  boost::asio::ip::tcp::acceptor acceptor_;
+  boost::asio::ssl::context context_;
+};
+
+int main(int argc, char* argv[])
 {
-  acceptor_.async_accept(socket_,
-      [this](boost::system::error_code ec)
-      {
-        // Check whether the server was stopped by a signal before this
-        // completion handler had a chance to run.
-        if (!acceptor_.is_open())
-        {
-          return;
-        }
+  try
+  {
+    if (argc != 2)
+    {
+      std::cerr << "Usage: server <port>\n";
+      return 1;
+    }
 
-        if (!ec)
-        {
-          connection_manager_.start(std::make_shared<connection>(
-              std::move(socket_), connection_manager_, request_handler_));
-        }
+    boost::asio::io_service io_service;
 
-        do_accept();
-      });
+    using namespace std; // For atoi.
+    server s(io_service, atoi(argv[1]));
+
+    io_service.run();
+  }
+  catch (std::exception& e)
+  {
+    std::cerr << "Exception: " << e.what() << "\n";
+  }
+
+  return 0;
 }
-
-void server::do_await_stop()
-{
-  signals_.async_wait(
-      [this](boost::system::error_code /*ec*/, int /*signo*/)
-      {
-        // The server is stopped by cancelling all outstanding asynchronous
-        // operations. Once all operations have finished the io_service::run()
-        // call will exit.
-        acceptor_.close();
-        connection_manager_.stop_all();
-      });
-}
-
-} // namespace server
-} // namespace http
